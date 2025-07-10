@@ -1,0 +1,3 @@
+
+def crop_trim(temp_file_paths):
+    ...
