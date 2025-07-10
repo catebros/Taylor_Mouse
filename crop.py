@@ -21,12 +21,11 @@ def crop(temp_file_paths):
         if 'video_durations' not in st.session_state:
             st.session_state.video_durations = {}
 
-        if 'refresh_counter' not in st.session_state:
-            st.session_state.refresh_counter = 0
+        if 'num_crops' not in st.session_state:
+            st.session_state.num_crops = {}
 
         downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
 
-        # Build and display the file table first
         st.header(f"Uploaded Files ({len(temp_file_paths)})")
         file_info_data = []
         for path in temp_file_paths:
@@ -42,13 +41,19 @@ def crop(temp_file_paths):
             except:
                 duration_str = "Unknown"
 
-            crop_status = "Yes" if file_name in st.session_state.crop_settings else "No"
+            crops = st.session_state.crop_settings.get(file_name, [])
+            crops_set = len([c for c in crops if c is not None])
+            total_crops = st.session_state.num_crops.get(file_name, 1)
+            
+            # Show which specific crops are set
+            set_crops = [str(i + 1) for i, c in enumerate(crops) if c is not None]
+            crops_detail = f"{crops_set}/{total_crops}" + (f" ({', '.join(set_crops)})" if set_crops else "")
 
             file_info_data.append({
                 "File Name": file_name,
                 "Size (MB)": f"{size_mb:.1f}",
                 "Duration": duration_str,
-                "Crop Set": crop_status
+                "Crops Set": crops_detail
             })
 
         st.dataframe(file_info_data, use_container_width=True, hide_index=True)
@@ -62,7 +67,28 @@ def crop(temp_file_paths):
         selected_video_path = temp_file_paths[selected_idx]
         selected_video_name = os.path.basename(selected_video_path)
 
-        # Sidebar input
+        st.sidebar.subheader("Crop Settings")
+
+        if selected_video_name not in st.session_state.num_crops:
+            st.session_state.num_crops[selected_video_name] = 1
+
+        st.session_state.num_crops[selected_video_name] = st.sidebar.number_input(
+            "Number of crops for this video",
+            min_value=1,
+            value=st.session_state.num_crops[selected_video_name],
+            step=1,
+            key=f"num_crops_{selected_video_name}"
+        )
+
+        num_crops = st.session_state.num_crops[selected_video_name]
+        crop_index = st.sidebar.selectbox("Select crop index", range(num_crops), format_func=lambda x: f"Crop {x+1}")
+
+        if selected_video_name not in st.session_state.crop_settings:
+            st.session_state.crop_settings[selected_video_name] = [None] * num_crops
+        elif len(st.session_state.crop_settings[selected_video_name]) < num_crops:
+            current = st.session_state.crop_settings[selected_video_name]
+            st.session_state.crop_settings[selected_video_name] = current + [None] * (num_crops - len(current))
+
         st.sidebar.subheader("Extract Frame for Cropping")
 
         try:
@@ -107,8 +133,8 @@ def crop(temp_file_paths):
                 if os.path.exists(temp_frame_path):
                     os.unlink(temp_frame_path)
 
-        if st.session_state.get(f"frame_extracted_{selected_video_name}", False) and not st.session_state.get("processing_started", False):
-            st.subheader("Draw Crop Box")
+        if st.session_state.get(f"frame_extracted_{selected_video_name}", False):
+            st.subheader(f"Draw Crop Box for Crop {crop_index + 1}")
             crop_box = st_cropper(
                 st.session_state.frame_images[selected_video_name],
                 realtime_update=True,
@@ -119,16 +145,14 @@ def crop(temp_file_paths):
 
             if st.button("Set Crop for This Video"):
                 if crop_box and all(k in crop_box for k in ['left', 'top', 'width', 'height']):
-                    st.session_state.crop_settings[selected_video_name] = {
+                    crop_data = {
                         'x': int(round(crop_box['left'])),
                         'y': int(round(crop_box['top'])),
                         'w': int(round(crop_box['width'])),
                         'h': int(round(crop_box['height']))
                     }
-                    st.success(f"Crop set for {selected_video_name}")
-                    st.rerun()
-                else:
-                    st.warning("Please draw a crop box before saving.")
+                    st.session_state.crop_settings[selected_video_name][crop_index] = crop_data
+                    st.success(f"Crop {crop_index + 1} set for {selected_video_name}")
 
         # Output settings
         st.sidebar.subheader("Output Settings")
@@ -137,6 +161,7 @@ def crop(temp_file_paths):
         os.makedirs(full_output_path, exist_ok=True)
 
         if st.sidebar.button("Crop All Videos"):
+            st.session_state[f"frame_extracted_{selected_video_name}"] = False
             st.session_state["processing_started"] = True
 
             if not st.session_state.crop_settings:
@@ -146,38 +171,39 @@ def crop(temp_file_paths):
 
                 for video_idx, video_path in enumerate(temp_file_paths):
                     video_name = os.path.basename(video_path)
-                    crop_data = st.session_state.crop_settings.get(video_name)
+                    crops = st.session_state.crop_settings.get(video_name, [])
 
-                    if not crop_data:
-                        st.warning(f"Skipping {video_name}: no crop defined.")
-                        continue
+                    for i, crop_data in enumerate(crops):
+                        if not crop_data:
+                            st.warning(f"Skipping {video_name} Crop {i + 1}: no crop defined.")
+                            continue
 
-                    output_file = os.path.join(full_output_path, f'{os.path.splitext(video_name)[0]}_cropped.mp4')
+                        output_file = os.path.join(full_output_path, f'{os.path.splitext(video_name)[0]}_crop{i+1}.mp4')
 
-                    st.write(f"**Video {video_idx + 1}/{len(temp_file_paths)}: {video_name}**")
-                    st.write(f"Cropping to {crop_data['w']}x{crop_data['h']} at position ({crop_data['x']}, {crop_data['y']})")
+                        st.write(f"**{video_name} (Crop {i + 1})**")
+                        st.write(f"Cropping to {crop_data['w']}x{crop_data['h']} at ({crop_data['x']}, {crop_data['y']})")
 
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    status_text.info(f"Processing {video_name}...")
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        status_text.info(f"Processing {video_name} Crop {i + 1}...")
 
-                    try:
-                        (
-                            ffmpeg
-                            .input(video_path)
-                            .filter('crop', crop_data['w'], crop_data['h'], crop_data['x'], crop_data['y'])
-                            .output(output_file, vcodec='libx264', acodec='aac')
-                            .overwrite_output()
-                            .run(quiet=True)
-                        )
+                        try:
+                            (
+                                ffmpeg
+                                .input(video_path)
+                                .filter('crop', crop_data['w'], crop_data['h'], crop_data['x'], crop_data['y'])
+                                .output(output_file, vcodec='libx264', acodec='aac')
+                                .overwrite_output()
+                                .run(quiet=True)
+                            )
 
-                        progress_bar.progress(1.0)
-                        status_text.success(f"Completed {video_name}")
+                            progress_bar.progress(1.0)
+                            status_text.success(f"Completed {video_name} Crop {i + 1}")
 
-                    except Exception as e:
-                        status_text.error(f"Error cropping {video_name}: {str(e)}")
+                        except Exception as e:
+                            status_text.error(f"Error cropping {video_name} Crop {i + 1}: {str(e)}")
 
-                    st.write("---")
+                        st.write("---")
 
                 st.success(f"All finished! Cropped videos saved to: {full_output_path}")
 
