@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import ffmpeg
+import zipfile
 from streamlit_cropper import st_cropper
 from PIL import Image
 import tempfile
@@ -10,6 +11,8 @@ def crop(temp_file_paths):
     if not temp_file_paths:
         st.error("No files provided")
         return
+
+    ZIP_THRESHOLD_MB = 500  # Zip
 
     try:
         if 'crop_settings' not in st.session_state:
@@ -21,42 +24,47 @@ def crop(temp_file_paths):
         if 'video_durations' not in st.session_state:
             st.session_state.video_durations = {}
 
-        if 'num_crops' not in st.session_state:
-            st.session_state.num_crops = {}
-
-        downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
-
         st.header(f"Uploaded Files ({len(temp_file_paths)})")
-        file_info_data = []
-        for path in temp_file_paths:
-            file_name = os.path.basename(path)
-            try:
-                size_mb = os.path.getsize(path) / (1024 * 1024)
-            except:
-                size_mb = 0
 
-            try:
-                duration_val = st.session_state.video_durations.get(file_name, float(ffmpeg.probe(path)['format']['duration']))
-                duration_str = f"{duration_val:.1f}s"
-            except:
-                duration_str = "Unknown"
+        def render_file_info_table():
+            file_info_data = []
+            for path in temp_file_paths:
+                file_name = os.path.basename(path)
+                try:
+                    size_mb = os.path.getsize(path) / (1024 * 1024)
+                except:
+                    size_mb = 0
 
-            crops = st.session_state.crop_settings.get(file_name, [])
-            crops_set = len([c for c in crops if c is not None])
-            total_crops = st.session_state.num_crops.get(file_name, 1)
-            
-            # Show which specific crops are set
-            set_crops = [str(i + 1) for i, c in enumerate(crops) if c is not None]
-            crops_detail = f"{crops_set}/{total_crops}" + (f" ({', '.join(set_crops)})" if set_crops else "")
+                try:
+                    duration_val = st.session_state.video_durations.get(file_name, float(ffmpeg.probe(path)['format']['duration']))
+                    duration_str = f"{duration_val:.1f}s"
+                except:
+                    duration_str = "Unknown"
 
-            file_info_data.append({
-                "File Name": file_name,
-                "Size (MB)": f"{size_mb:.1f}",
-                "Duration": duration_str,
-                "Crops Set": crops_detail
-            })
+                crops_dict = st.session_state.crop_settings.get(file_name, {})
+                crops_set = sum(1 for c in crops_dict.values() if c is not None)
+                total_crops = len(crops_dict)
+                set_mice = [f"Mouse {m}" for m in crops_dict if crops_dict[m] is not None]
+                crops_detail = f"{crops_set}/{total_crops}" + (f" ({', '.join(set_mice)})" if set_mice else "")
 
-        st.dataframe(file_info_data, use_container_width=True, hide_index=True)
+                file_info_data.append({
+                    "File Name": file_name,
+                    "Size (MB)": f"{size_mb:.1f}",
+                    "Duration": duration_str,
+                    "Crops Set": crops_detail
+                })
+
+            st.dataframe(file_info_data, use_container_width=True, hide_index=True)
+
+        if 'refresh_counter' not in st.session_state:
+            st.session_state.refresh_counter = 0
+
+        if st.button("Refresh Table"):
+            st.session_state.refresh_counter += 1
+
+        render_file_info_table()
+
+
 
         selected_idx = st.sidebar.selectbox(
             "Choose a video:",
@@ -67,27 +75,22 @@ def crop(temp_file_paths):
         selected_video_path = temp_file_paths[selected_idx]
         selected_video_name = os.path.basename(selected_video_path)
 
-        st.sidebar.subheader("Crop Settings")
+        st.sidebar.subheader("Mouse IDs Setup")
+        mouse_ids_input = st.sidebar.text_input("Enter mouse IDs in the video (comma-separated)", "1,2,3")
+        mouse_ids = [m.strip() for m in mouse_ids_input.split(",") if m.strip().isdigit()]
 
-        if selected_video_name not in st.session_state.num_crops:
-            st.session_state.num_crops[selected_video_name] = 1
-
-        st.session_state.num_crops[selected_video_name] = st.sidebar.number_input(
-            "Number of crops for this video",
-            min_value=1,
-            value=st.session_state.num_crops[selected_video_name],
-            step=1,
-            key=f"num_crops_{selected_video_name}"
-        )
-
-        num_crops = st.session_state.num_crops[selected_video_name]
-        crop_index = st.sidebar.selectbox("Select crop index", range(num_crops), format_func=lambda x: f"Crop {x+1}")
+        if not mouse_ids:
+            st.sidebar.warning("Please enter at least one mouse ID.")
+            return
 
         if selected_video_name not in st.session_state.crop_settings:
-            st.session_state.crop_settings[selected_video_name] = [None] * num_crops
-        elif len(st.session_state.crop_settings[selected_video_name]) < num_crops:
-            current = st.session_state.crop_settings[selected_video_name]
-            st.session_state.crop_settings[selected_video_name] = current + [None] * (num_crops - len(current))
+            st.session_state.crop_settings[selected_video_name] = {}
+
+        for mid in mouse_ids:
+            if mid not in st.session_state.crop_settings[selected_video_name]:
+                st.session_state.crop_settings[selected_video_name][mid] = None
+
+        selected_mouse_id = st.sidebar.selectbox("Select mouse to crop", mouse_ids, format_func=lambda x: f"Mouse {x}")
 
         st.sidebar.subheader("Extract Frame for Cropping")
 
@@ -134,7 +137,7 @@ def crop(temp_file_paths):
                     os.unlink(temp_frame_path)
 
         if st.session_state.get(f"frame_extracted_{selected_video_name}", False):
-            st.subheader(f"Draw Crop Box for Crop {crop_index + 1}")
+            st.subheader(f"Draw Crop Box for Mouse {selected_mouse_id}")
             crop_box = st_cropper(
                 st.session_state.frame_images[selected_video_name],
                 realtime_update=True,
@@ -143,7 +146,7 @@ def crop(temp_file_paths):
                 return_type='box',
             )
 
-            if st.button("Set Crop for This Video"):
+            if st.button("Set Crop for This Mouse"):
                 if crop_box and all(k in crop_box for k in ['left', 'top', 'width', 'height']):
                     crop_data = {
                         'x': int(round(crop_box['left'])),
@@ -151,14 +154,13 @@ def crop(temp_file_paths):
                         'w': int(round(crop_box['width'])),
                         'h': int(round(crop_box['height']))
                     }
-                    st.session_state.crop_settings[selected_video_name][crop_index] = crop_data
-                    st.success(f"Crop {crop_index + 1} set for {selected_video_name}")
+                    st.session_state.crop_settings[selected_video_name][selected_mouse_id] = crop_data
+                    st.success(f"Crop set for Mouse {selected_mouse_id} in {selected_video_name}")
 
         # Output settings
         st.sidebar.subheader("Output Settings")
-        OUTPUT_DIR = st.sidebar.text_input("Folder name in Downloads", "Cropped_Videos")
-        full_output_path = os.path.join(os.path.expanduser("~"), "Downloads", OUTPUT_DIR)
-        os.makedirs(full_output_path, exist_ok=True)
+        OUTPUT_DIR = st.sidebar.text_input("Full output folder path", os.path.join(os.path.expanduser("~"), "Videos", "Cropped"))
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
 
         if st.sidebar.button("Crop All Videos"):
             st.session_state[f"frame_extracted_{selected_video_name}"] = False
@@ -168,44 +170,55 @@ def crop(temp_file_paths):
                 st.sidebar.warning("No crops have been set.")
             else:
                 st.subheader("Cropping Process")
+                output_files = []
 
                 for video_idx, video_path in enumerate(temp_file_paths):
                     video_name = os.path.basename(video_path)
-                    crops = st.session_state.crop_settings.get(video_name, [])
+                    crops = st.session_state.crop_settings.get(video_name, {})
 
-                    for i, crop_data in enumerate(crops):
+                    for mouse_id, crop_data in crops.items():
                         if not crop_data:
-                            st.warning(f"Skipping {video_name} Crop {i + 1}: no crop defined.")
+                            st.warning(f"Skipping {video_name} Mouse {mouse_id}: no crop defined.")
                             continue
 
-                        output_file = os.path.join(full_output_path, f'{os.path.splitext(video_name)[0]}_crop{i+1}.mp4')
+                        output_file = os.path.join(OUTPUT_DIR, f'{os.path.splitext(video_name)[0]}_mouse{mouse_id}.mp4')
 
-                        st.write(f"**{video_name} (Crop {i + 1})**")
+                        st.write(f"**{video_name} (Mouse {mouse_id})**")
                         st.write(f"Cropping to {crop_data['w']}x{crop_data['h']} at ({crop_data['x']}, {crop_data['y']})")
 
                         progress_bar = st.progress(0)
                         status_text = st.empty()
-                        status_text.info(f"Processing {video_name} Crop {i + 1}...")
+                        status_text.info(f"Processing {video_name} Mouse {mouse_id}...")
 
                         try:
                             (
                                 ffmpeg
                                 .input(video_path)
                                 .filter('crop', crop_data['w'], crop_data['h'], crop_data['x'], crop_data['y'])
-                                .output(output_file, vcodec='libx264', acodec='aac')
+                                .output(output_file, vcodec='libx264', acodec='aac', an=None)
                                 .overwrite_output()
                                 .run(quiet=True)
                             )
 
+                            output_files.append(output_file)
                             progress_bar.progress(1.0)
-                            status_text.success(f"Completed {video_name} Crop {i + 1}")
+                            status_text.success(f"Completed {video_name} Mouse {mouse_id}")
 
                         except Exception as e:
-                            status_text.error(f"Error cropping {video_name} Crop {i + 1}: {str(e)}")
+                            status_text.error(f"Error cropping {video_name} Mouse {mouse_id}: {str(e)}")
 
                         st.write("---")
 
-                st.success(f"All finished! Cropped videos saved to: {full_output_path}")
+                total_size_mb = sum(os.path.getsize(f) for f in output_files) / (1024 * 1024)
+                if total_size_mb >= ZIP_THRESHOLD_MB:
+                    zip_name = os.path.basename(os.path.normpath(OUTPUT_DIR)) + ".zip"
+                    zip_path = os.path.join(OUTPUT_DIR, zip_name)                  
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        for f in output_files:
+                            zipf.write(f, os.path.basename(f))
+                    st.success(f"Files zipped to: {zip_path}")
+                else:
+                    st.success(f"All videos saved to: {OUTPUT_DIR}")
 
     except Exception as e:
         st.error(f"Unexpected error: {str(e)}")
