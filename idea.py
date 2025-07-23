@@ -10,9 +10,6 @@ st.set_page_config(page_title="Video Processing", layout="wide")
 
 st.title('Video Processing')
 
-downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
-st.info(f"All processed videos will be saved to your Downloads folder: {downloads_path}")
-
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -24,7 +21,7 @@ with col2:
     uploaded_files = st.file_uploader(
         "Choose video files", 
         accept_multiple_files=True,
-        type=['mp4', 'avi', 'mov', 'mkv', 'wmv']
+        type=['mp4']
     )
 
 if uploaded_files:

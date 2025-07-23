@@ -25,6 +25,23 @@ def crop(temp_file_paths):
             st.session_state.video_durations = {}
 
         st.header(f"Uploaded Files ({len(temp_file_paths)})")
+        
+        selected_idx = st.sidebar.selectbox(
+            "Choose a video:",
+            range(len(temp_file_paths)),
+            format_func=lambda i: os.path.basename(temp_file_paths[i])
+        )
+
+        selected_video_path = temp_file_paths[selected_idx]
+        selected_video_name = os.path.basename(selected_video_path)
+
+        st.sidebar.subheader("Mouse IDs Setup")
+        mouse_ids_input = st.sidebar.text_input("Enter mouse IDs in the video (comma-separated)", "1,2,3")
+        mouse_ids = [m.strip() for m in mouse_ids_input.split(",") if m.strip().isdigit()]
+
+        if not mouse_ids:
+            st.sidebar.warning("Please enter at least one mouse ID.")
+            return
 
         def render_file_info_table():
             file_info_data = []
@@ -43,8 +60,14 @@ def crop(temp_file_paths):
 
                 crops_dict = st.session_state.crop_settings.get(file_name, {})
                 crops_set = sum(1 for c in crops_dict.values() if c is not None)
-                total_crops = len(crops_dict)
-                set_mice = [f"Mouse {m}" for m in crops_dict if crops_dict[m] is not None]
+                
+                if file_name == selected_video_name and mouse_ids:
+                    total_crops = len(mouse_ids) 
+                    set_mice = [f"Mouse {m}" for m in mouse_ids if crops_dict.get(m) is not None]
+                else:
+                    total_crops = len(crops_dict) if crops_dict else 0
+                    set_mice = [f"Mouse {m}" for m in crops_dict if crops_dict[m] is not None]
+                
                 crops_detail = f"{crops_set}/{total_crops}" + (f" ({', '.join(set_mice)})" if set_mice else "")
 
                 file_info_data.append({
@@ -56,32 +79,7 @@ def crop(temp_file_paths):
 
             st.dataframe(file_info_data, use_container_width=True, hide_index=True)
 
-        if 'refresh_counter' not in st.session_state:
-            st.session_state.refresh_counter = 0
-
-        if st.button("Refresh Table"):
-            st.session_state.refresh_counter += 1
-
         render_file_info_table()
-
-
-
-        selected_idx = st.sidebar.selectbox(
-            "Choose a video:",
-            range(len(temp_file_paths)),
-            format_func=lambda i: os.path.basename(temp_file_paths[i])
-        )
-
-        selected_video_path = temp_file_paths[selected_idx]
-        selected_video_name = os.path.basename(selected_video_path)
-
-        st.sidebar.subheader("Mouse IDs Setup")
-        mouse_ids_input = st.sidebar.text_input("Enter mouse IDs in the video (comma-separated)", "1,2,3")
-        mouse_ids = [m.strip() for m in mouse_ids_input.split(",") if m.strip().isdigit()]
-
-        if not mouse_ids:
-            st.sidebar.warning("Please enter at least one mouse ID.")
-            return
 
         if selected_video_name not in st.session_state.crop_settings:
             st.session_state.crop_settings[selected_video_name] = {}
@@ -156,13 +154,62 @@ def crop(temp_file_paths):
                     }
                     st.session_state.crop_settings[selected_video_name][selected_mouse_id] = crop_data
                     st.success(f"Crop set for Mouse {selected_mouse_id} in {selected_video_name}")
+                    st.rerun()  
 
-        # Output settings
         st.sidebar.subheader("Output Settings")
         OUTPUT_DIR = st.sidebar.text_input("Full output folder path", os.path.join(os.path.expanduser("~"), "Videos", "Cropped"))
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        
+        st.sidebar.subheader("Output Naming")
+        
+        if "prefix_settings" not in st.session_state:
+            st.session_state.prefix_settings = {}
+        
+        for path in temp_file_paths:
+            video_name = os.path.basename(path)
+            if video_name not in st.session_state.prefix_settings:
+                default_prefix = video_name.split('_')[0] if '_' in video_name else os.path.splitext(video_name)[0]
+                st.session_state.prefix_settings[video_name] = default_prefix
+        
+        st.sidebar.markdown("**Customize output prefixes:**")
+        
+        for path in temp_file_paths:
+            video_name = os.path.basename(path)
+            current_prefix = st.session_state.prefix_settings[video_name]
+            
+            new_prefix = st.sidebar.text_input(
+                f"Prefix for {video_name}:",
+                value=current_prefix,
+                key=f"prefix_{video_name}"
+            )
+            st.session_state.prefix_settings[video_name] = new_prefix
+            st.sidebar.caption(f"→ {new_prefix}_mouseX.mp4")
+        
+        folder_exists = os.path.exists(OUTPUT_DIR)
+        if folder_exists:
+            existing_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith('.mp4')]
+            if existing_files:
+                st.sidebar.warning(f"Folder exists with {len(existing_files)} video files!")
+                overwrite_option = st.sidebar.radio(
+                    "What to do with existing files?",
+                    ["Overwrite existing files", "Create new folder with timestamp"],
+                    index=1
+                )
+            else:
+                overwrite_option = "Overwrite existing files"
+        else:
+            overwrite_option = "Overwrite existing files"
+        
+        if overwrite_option == "Create new folder with timestamp" and folder_exists:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            final_output_dir = f"{OUTPUT_DIR}_{timestamp}"
+            st.sidebar.info(f"Will create: {os.path.basename(final_output_dir)}")
+        else:
+            final_output_dir = OUTPUT_DIR
 
         if st.sidebar.button("Crop All Videos"):
+            os.makedirs(final_output_dir, exist_ok=True)
+            
             st.session_state[f"frame_extracted_{selected_video_name}"] = False
             st.session_state["processing_started"] = True
 
@@ -174,16 +221,29 @@ def crop(temp_file_paths):
 
                 for video_idx, video_path in enumerate(temp_file_paths):
                     video_name = os.path.basename(video_path)
-                    crops = st.session_state.crop_settings.get(video_name, {})
+                    
+                    video_prefix = st.session_state.prefix_settings.get(video_name, video_name.split('_')[0] if '_' in video_name else os.path.splitext(video_name)[0])
+                    
+                    if video_name == selected_video_name:
+                        current_mouse_ids = mouse_ids  
+                    else:
+                        crops_dict = st.session_state.crop_settings.get(video_name, {})
+                        current_mouse_ids = [mid for mid in mouse_ids if crops_dict.get(mid) is not None]
+                    
+                    if not current_mouse_ids:
+                        st.warning(f"Skipping {video_name}: No mouse crops defined for current mouse IDs.")
+                        continue
 
-                    for mouse_id, crop_data in crops.items():
+                    for mouse_id in current_mouse_ids:
+                        crop_data = st.session_state.crop_settings.get(video_name, {}).get(mouse_id)
+                        
                         if not crop_data:
                             st.warning(f"Skipping {video_name} Mouse {mouse_id}: no crop defined.")
                             continue
 
-                        output_file = os.path.join(OUTPUT_DIR, f'{os.path.splitext(video_name)[0]}_mouse{mouse_id}.mp4')
+                        output_file = os.path.join(final_output_dir, f'{video_prefix}_mouse{mouse_id}.mp4')
 
-                        st.write(f"**{video_name} (Mouse {mouse_id})**")
+                        st.write(f"**{video_name} (Mouse {mouse_id})** → {video_prefix}_mouse{mouse_id}.mp4")
                         st.write(f"Cropping to {crop_data['w']}x{crop_data['h']} at ({crop_data['x']}, {crop_data['y']})")
 
                         progress_bar = st.progress(0)
