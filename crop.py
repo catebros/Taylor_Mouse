@@ -109,11 +109,11 @@ def crop(temp_file_paths):
         # Render table only once, after initialization
         render_file_info_table()
 
-        selected_mouse_id = st.sidebar.selectbox("Select mouse to crop", mouse_ids, format_func=lambda x: f"Mouse {x}")
-
         st.sidebar.markdown("---")
         
         st.sidebar.header("2. Frame Extraction & Cropping")
+
+        selected_mouse_id = st.sidebar.selectbox("Select mouse to crop", mouse_ids, format_func=lambda x: f"Mouse {x}")
 
         try:
             if selected_video_name not in st.session_state.video_durations:
