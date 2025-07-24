@@ -411,9 +411,3 @@ def crop_trim(temp_file_paths):
 
     except Exception as e:
         st.error(f"Unexpected error: {str(e)}")
-                st.success(f"Videos zipped at: {zip_path}")
-            else:
-                st.success(f"Videos saved to: {final_output_dir}")
-
-    except Exception as e:
-        st.error(f"Unexpected error: {str(e)}")
