@@ -68,20 +68,20 @@ def trim(temp_file_paths):
         st.sidebar.subheader("Start Time (H:M:S)")
         col1, col2, col3 = st.sidebar.columns(3)
         with col1:
-            start_h = st.number_input("H", 0, 23, cfg["start_h"], key=f"{selected_name}_sh", format="%d")
+            start_h = st.number_input("H", 0, 23, cfg["start_h"], key=f"trim_start_h_{selected_idx}_{selected_name}", format="%d")
         with col2:
-            start_m = st.number_input("M", 0, 59, cfg["start_m"], key=f"{selected_name}_sm", format="%d")
+            start_m = st.number_input("M", 0, 59, cfg["start_m"], key=f"trim_start_m_{selected_idx}_{selected_name}", format="%d")
         with col3:
-            start_s = st.number_input("S", 0, 59, cfg["start_s"], key=f"{selected_name}_ss", format="%d")
+            start_s = st.number_input("S", 0, 59, cfg["start_s"], key=f"trim_start_s_{selected_idx}_{selected_name}", format="%d")
 
         st.sidebar.subheader("Chunk Duration (H:M:S)")
         col1, col2, col3 = st.sidebar.columns(3)
         with col1:
-            chunk_h = st.number_input("H", 0, 24, cfg["chunk_h"], key=f"{selected_name}_ch", format="%d")
+            chunk_h = st.number_input("H", 0, 24, cfg["chunk_h"], key=f"trim_chunk_h_{selected_idx}_{selected_name}", format="%d")
         with col2:
-            chunk_m = st.number_input("M", 0, 59, cfg["chunk_m"], key=f"{selected_name}_cm", format="%d")
+            chunk_m = st.number_input("M", 0, 59, cfg["chunk_m"], key=f"trim_chunk_m_{selected_idx}_{selected_name}", format="%d")
         with col3:
-            chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"{selected_name}_cs", format="%d")
+            chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"trim_chunk_s_{selected_idx}_{selected_name}", format="%d")
 
         # Change button label based on mode
         if trimming_mode == "Same settings for all videos":
@@ -95,11 +95,11 @@ def trim(temp_file_paths):
             available_time = cfg["duration"] - start_total
             
             if chunk_total <= 0:
-                st.sidebar.error("Chunk duration must be greater than 0!")
+                st.sidebar.error("Bin duration must be greater than 0!")
             elif start_total >= cfg["duration"]:
                 st.sidebar.error("Start time exceeds video duration!")
             elif chunk_total > available_time:
-                st.sidebar.error(f"Chunk duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
+                st.sidebar.error(f"Bin duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
             else:
                 # Apply to current video first
                 cfg["start_h"] = start_h
@@ -123,6 +123,9 @@ def trim(temp_file_paths):
                     st.sidebar.success("Settings applied to all videos!")
                 else:
                     st.sidebar.success(f"Times set for {selected_name}!")
+                
+                # Force table update by triggering rerun
+                st.rerun()
 
         st.sidebar.markdown("---")
         
@@ -138,7 +141,7 @@ def trim(temp_file_paths):
             table_data.append({
                 "Video Name": name,
                 "Start Time": seconds_to_hms(start),
-                "Chunk Duration": seconds_to_hms(chunk)
+                "Bin Duration": seconds_to_hms(chunk)
             })
         st.table(table_data)
         
@@ -184,6 +187,14 @@ def trim(temp_file_paths):
         
         st.sidebar.markdown("**Customize output prefixes:**")
         
+        # Check for duplicate prefixes
+        all_prefixes = []
+        duplicate_found = False
+        
+        # Initialize prefix tracking
+        if "temp_prefix_changes" not in st.session_state:
+            st.session_state.temp_prefix_changes = {}
+        
         for path in temp_file_paths:
             video_name = os.path.basename(path)
             current_prefix = st.session_state.prefix_settings[video_name]
@@ -191,80 +202,202 @@ def trim(temp_file_paths):
             new_prefix = st.sidebar.text_input(
                 f"Prefix for {video_name}:",
                 value=current_prefix,
-                key=f"prefix_{video_name}"
+                key=f"prefix_{video_name}",
+                on_change=lambda v=video_name: st.session_state.temp_prefix_changes.update({v: st.session_state[f"prefix_{v}"]})
             )
-            st.session_state.prefix_settings[video_name] = new_prefix
-            st.sidebar.caption(f"→ {new_prefix}_bin_X.mp4 or {new_prefix}_HX.mp4")
+            
+            # Update the actual prefix settings only after user confirms the change
+            if video_name in st.session_state.temp_prefix_changes:
+                st.session_state.prefix_settings[video_name] = st.session_state.temp_prefix_changes[video_name]
+            
+            st.sidebar.caption(f"→ {st.session_state.prefix_settings[video_name]}_bin_X.mp4 or {st.session_state.prefix_settings[video_name]}_HX.mp4")
+            
+            all_prefixes.append(st.session_state.prefix_settings[video_name])
+        
+        # Check for duplicates
+        if len(all_prefixes) != len(set(all_prefixes)):
+            duplicate_found = True
+            st.sidebar.error("⚠️ Duplicate prefixes detected! Files will overwrite each other.")
+            
+            # Show which prefixes are duplicated
+            from collections import Counter
+            prefix_counts = Counter(all_prefixes)
+            duplicates = [prefix for prefix, count in prefix_counts.items() if count > 1]
+            st.sidebar.error(f"Duplicated prefixes: {', '.join(duplicates)}")
+            
+            # Offer solutions
+            st.sidebar.subheader("Solutions:")
+            naming_strategy = st.sidebar.radio(
+                "Choose how to handle duplicate names:",
+                [
+                    "Fix prefixes manually (recommended)",
+                    "Use continuous bin numbering across all videos"
+                ],
+                help="""
+                **Fix prefixes manually:** Each video gets unique prefix names, bins restart at 1 for each video.
+                Example: video1_bin_1.mp4, video1_bin_2.mp4, video2_bin_1.mp4, video2_bin_2.mp4
+                
+                **Continuous bin numbering:** Bins continue sequentially across ALL videos regardless of prefix.
+                Example: If video1 has 3 bins and video2 has 2 bins:
+                - video1_bin_1.mp4, video1_bin_2.mp4, video1_bin_3.mp4
+                - video2_bin_4.mp4, video2_bin_5.mp4
+                This ensures no filename conflicts even with duplicate prefixes.
+                """
+            )
+        else:
+            naming_strategy = "Fix prefixes manually (recommended)"
 
         st.sidebar.markdown("---")
         
         st.sidebar.header("3. Process Videos")
         
-        if st.sidebar.button("Start Trimming All Videos", type="primary", use_container_width=True):
+        # Disable processing if duplicates found and manual fix chosen
+        if duplicate_found and naming_strategy == "Fix prefixes manually (recommended)":
+            st.sidebar.error("Please fix duplicate prefixes before processing")
+            process_button_disabled = True
+        else:
+            process_button_disabled = False
+        
+        if st.sidebar.button("Start Trimming All Videos", type="primary", use_container_width=True, disabled=process_button_disabled):
             os.makedirs(final_output_path, exist_ok=True)
             
             st.subheader("Trimming Process")
             all_output_files = []
+            
+            # Choose naming strategy
+            if naming_strategy == "Use continuous bin numbering across all videos":
+                # Continuous bin numbering across all videos
+                global_bin_counter = 1
+                
+                for path in temp_file_paths:
+                    name = os.path.basename(path)
+                    config = st.session_state.video_settings[name]
 
-            for path in temp_file_paths:
-                name = os.path.basename(path)
-                config = st.session_state.video_settings[name]
+                    video_prefix = st.session_state.prefix_settings.get(name, name.split('_')[0] if '_' in name else os.path.splitext(name)[0])
 
-                # Get user-defined prefix for this specific video
-                video_prefix = st.session_state.prefix_settings.get(name, name.split('_')[0] if '_' in name else os.path.splitext(name)[0])
+                    start_time = hms_to_seconds(config["start_h"], config["start_m"], config["start_s"])
+                    bin_duration = hms_to_seconds(config["chunk_h"], config["chunk_m"], config["chunk_s"])
 
-                start_time = hms_to_seconds(config["start_h"], config["start_m"], config["start_s"])
-                chunk_duration = hms_to_seconds(config["chunk_h"], config["chunk_m"], config["chunk_s"])
+                    if bin_duration <= 0:
+                        st.warning(f"Skipping {name}: bin duration must be greater than 0.")
+                        continue
 
-                if chunk_duration <= 0:
-                    st.warning(f"Skipping {name}: chunk duration must be greater than 0.")
-                    continue
+                    try:
+                        duration = float(ffmpeg.probe(path)['format']['duration'])
+                    except:
+                        duration = 86400.0
 
-                try:
-                    duration = float(ffmpeg.probe(path)['format']['duration'])
-                except:
-                    duration = 86400.0
+                    if start_time >= duration:
+                        st.warning(f"Skipping {name}: start time exceeds duration.")
+                        continue
 
-                if start_time >= duration:
-                    st.warning(f"Skipping {name}: start time exceeds duration.")
-                    continue
+                    effective_duration = duration - start_time
+                    num_bins = math.ceil(effective_duration / bin_duration)
 
-                effective_duration = duration - start_time
-                num_chunks = math.ceil(effective_duration / chunk_duration)
+                    st.write(f"**{name}**: {num_bins} bins from {seconds_to_hms(start_time)} (prefix: {video_prefix}) [Bins {global_bin_counter}-{global_bin_counter + num_bins - 1}]")
 
-                st.write(f"**{name}**: {num_chunks} chunks from {seconds_to_hms(start_time)} (prefix: {video_prefix})")
+                    video_progress = st.progress(0)
+                    bin_status = st.empty()
 
-                video_progress = st.progress(0)
-                chunk_status = st.empty()
+                    for i in range(num_bins):
+                        bin_start = start_time + i * bin_duration
+                        bin_end = min(bin_start + bin_duration, duration)
+                        
+                        if bin_duration == 3600:  
+                            hour_label = int(bin_start // 3600) + 1  
+                            output_name = f"{video_prefix}_H{hour_label}.mp4"
+                        else:
+                            output_name = f"{video_prefix}_bin_{global_bin_counter}.mp4"
+                        
+                        output_path = os.path.join(final_output_path, output_name)
 
-                for i in range(num_chunks):
-                    chunk_start = start_time + i * chunk_duration
-                    chunk_end = min(chunk_start + chunk_duration, duration)
-                    
-                    if chunk_duration == 3600:  
-                        hour_label = int(chunk_start // 3600) + 1  
-                        output_name = f"{video_prefix}_H{hour_label}.mp4"
-                    else:
-                        bin_number = i + 1  
-                        output_name = f"{video_prefix}_bin_{bin_number}.mp4"
-                    
-                    output_path = os.path.join(final_output_path, output_name)
+                        bin_status.info(f"Bin {global_bin_counter} → {seconds_to_hms(bin_start)} to {seconds_to_hms(bin_end)}")
 
-                    chunk_status.info(f"Chunk {i+1}/{num_chunks} → {seconds_to_hms(chunk_start)} to {seconds_to_hms(chunk_end)}")
+                        (
+                            ffmpeg
+                            .input(path, ss=bin_start, t=bin_duration)
+                            .output(output_path, vcodec='libx264', an=None)
+                            .overwrite_output()
+                            .run()
+                        )
 
-                    (
-                        ffmpeg
-                        .input(path, ss=chunk_start, t=chunk_duration)
-                        .output(output_path, vcodec='libx264', an=None)
-                        .overwrite_output()
-                        .run()
-                    )
+                        all_output_files.append(output_path)
+                        video_progress.progress((i + 1) / num_bins)
+                        global_bin_counter += 1
 
-                    all_output_files.append(output_path)
-                    video_progress.progress((i + 1) / num_chunks)
+                    bin_status.success(f"Completed: {name}")
+                    st.write("---")
+            else:
+                # Original approach with filename conflict detection
+                used_filenames = set()
 
-                chunk_status.success(f"Completed: {name}")
-                st.write("---")
+                for path in temp_file_paths:
+                    name = os.path.basename(path)
+                    config = st.session_state.video_settings[name]
+
+                    video_prefix = st.session_state.prefix_settings.get(name, name.split('_')[0] if '_' in name else os.path.splitext(name)[0])
+
+                    start_time = hms_to_seconds(config["start_h"], config["start_m"], config["start_s"])
+                    bin_duration = hms_to_seconds(config["chunk_h"], config["chunk_m"], config["chunk_s"])
+
+                    if bin_duration <= 0:
+                        st.warning(f"Skipping {name}: bin duration must be greater than 0.")
+                        continue
+
+                    try:
+                        duration = float(ffmpeg.probe(path)['format']['duration'])
+                    except:
+                        duration = 86400.0
+
+                    if start_time >= duration:
+                        st.warning(f"Skipping {name}: start time exceeds duration.")
+                        continue
+
+                    effective_duration = duration - start_time
+                    num_bins = math.ceil(effective_duration / bin_duration)
+
+                    st.write(f"**{name}**: {num_bins} bins from {seconds_to_hms(start_time)} (prefix: {video_prefix})")
+
+                    video_progress = st.progress(0)
+                    bin_status = st.empty()
+
+                    for i in range(num_bins):
+                        bin_start = start_time + i * bin_duration
+                        bin_end = min(bin_start + bin_duration, duration)
+                        
+                        if bin_duration == 3600:  
+                            hour_label = int(bin_start // 3600) + 1  
+                            base_output_name = f"{video_prefix}_H{hour_label}.mp4"
+                        else:
+                            bin_number = i + 1  
+                            base_output_name = f"{video_prefix}_bin_{bin_number}.mp4"
+                        
+                        # Check for filename conflicts and add counter if needed
+                        output_name = base_output_name
+                        counter = 1
+                        while output_name in used_filenames:
+                            name_without_ext = os.path.splitext(base_output_name)[0]
+                            output_name = f"{name_without_ext}_{counter}.mp4"
+                            counter += 1
+                        
+                        used_filenames.add(output_name)
+                        output_path = os.path.join(final_output_path, output_name)
+
+                        bin_status.info(f"Bin {i+1}/{num_bins} → {seconds_to_hms(bin_start)} to {seconds_to_hms(bin_end)}")
+
+                        (
+                            ffmpeg
+                            .input(path, ss=bin_start, t=bin_duration)
+                            .output(output_path, vcodec='libx264', an=None)
+                            .overwrite_output()
+                            .run()
+                        )
+
+                        all_output_files.append(output_path)
+                        video_progress.progress((i + 1) / num_bins)
+
+                    bin_status.success(f"Completed: {name}")
+                    st.write("---")
 
             total_size_mb = sum(os.path.getsize(f) for f in all_output_files) / (1024 * 1024)
             if total_size_mb >= ZIP_THRESHOLD_MB:
@@ -279,5 +412,4 @@ def trim(temp_file_paths):
 
         
     except Exception as e:
-        st.error(f"Unexpected error: {str(e)}")
         st.error(f"Unexpected error: {str(e)}")

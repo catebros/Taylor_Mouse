@@ -99,7 +99,7 @@ def crop_trim(temp_file_paths):
                     "Duration": duration_str,
                     "Crops Set": crops_detail,
                     "Start Time": seconds_to_hms(start_time),
-                    "Chunk Duration": seconds_to_hms(chunk_time)
+                    "Bin Duration": seconds_to_hms(chunk_time)
                 })
 
             st.dataframe(file_info_data, use_container_width=True, hide_index=True)
@@ -232,20 +232,28 @@ def crop_trim(temp_file_paths):
         st.sidebar.subheader("Start Time (H:M:S)")
         col1, col2, col3 = st.sidebar.columns(3)
         with col1:
-            start_h = st.number_input("H", 0, 23, cfg["start_h"], key=f"{trimming_video_name}_sh", format="%d")
+            start_h = st.number_input("H", 0, 23, cfg["start_h"], key=f"ct_start_h_{trimming_video_idx}_{trimming_video_name}", format="%d")
         with col2:
-            start_m = st.number_input("M", 0, 59, cfg["start_m"], key=f"{trimming_video_name}_sm", format="%d")
+            start_m = st.number_input("M", 0, 59, cfg["start_m"], key=f"ct_start_m_{trimming_video_idx}_{trimming_video_name}", format="%d")
         with col3:
-            start_s = st.number_input("S", 0, 59, cfg["start_s"], key=f"{trimming_video_name}_ss", format="%d")
+            start_s = st.number_input("S", 0, 59, cfg["start_s"], key=f"ct_start_s_{trimming_video_idx}_{trimming_video_name}", format="%d")
 
-        st.sidebar.subheader("Chunk Duration (H:M:S)")
+        st.sidebar.subheader("Bin Duration (H:M:S)")
         col1, col2, col3 = st.sidebar.columns(3)
         with col1:
-            chunk_h = st.number_input("H", 0, 24, cfg["chunk_h"], key=f"{trimming_video_name}_ch", format="%d")
+            chunk_h = st.number_input("H", 0, 24, cfg["chunk_h"], key=f"ct_chunk_h_{trimming_video_idx}_{trimming_video_name}", format="%d")
         with col2:
-            chunk_m = st.number_input("M", 0, 59, cfg["chunk_m"], key=f"{trimming_video_name}_cm", format="%d")
+            chunk_m = st.number_input("M", 0, 59, cfg["chunk_m"], key=f"ct_chunk_m_{trimming_video_idx}_{trimming_video_name}", format="%d")
         with col3:
-            chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"{trimming_video_name}_cs", format="%d")
+            chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"ct_chunk_s_{trimming_video_idx}_{trimming_video_name}", format="%d")
+
+        # Auto-update session state when values change
+        cfg["start_h"] = start_h
+        cfg["start_m"] = start_m
+        cfg["start_s"] = start_s
+        cfg["chunk_h"] = chunk_h
+        cfg["chunk_m"] = chunk_m
+        cfg["chunk_s"] = chunk_s
 
         # Change button label based on mode
         if trimming_mode == "Same settings for all videos":
@@ -259,20 +267,12 @@ def crop_trim(temp_file_paths):
             available_time = cfg["duration"] - start_total
             
             if chunk_total <= 0:
-                st.sidebar.error("Chunk duration must be greater than 0!")
+                st.sidebar.error("Bin duration must be greater than 0!")
             elif start_total >= cfg["duration"]:
                 st.sidebar.error("Start time exceeds video duration!")
             elif chunk_total > available_time:
-                st.sidebar.error(f"Chunk duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
+                st.sidebar.error(f"Bin duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
             else:
-                # Apply to current video first
-                cfg["start_h"] = start_h
-                cfg["start_m"] = start_m
-                cfg["start_s"] = start_s
-                cfg["chunk_h"] = chunk_h
-                cfg["chunk_m"] = chunk_m
-                cfg["chunk_s"] = chunk_s
-                
                 if trimming_mode == "Same settings for all videos":
                     # Apply to all videos
                     for path in temp_file_paths:
@@ -350,9 +350,9 @@ def crop_trim(temp_file_paths):
                     current_mouse_ids = [mid for mid in mouse_ids if crops_dict.get(mid) is not None]
 
                 start_time = hms_to_seconds(config["start_h"], config["start_m"], config["start_s"])
-                chunk_duration = hms_to_seconds(config["chunk_h"], config["chunk_m"], config["chunk_s"])
-                if chunk_duration <= 0 or start_time >= duration:
-                    st.warning(f"Skipping {name}: Invalid start time or chunk duration.")
+                bin_duration = hms_to_seconds(config["chunk_h"], config["chunk_m"], config["chunk_s"])
+                if bin_duration <= 0 or start_time >= duration:
+                    st.warning(f"Skipping {name}: Invalid start time or bin duration.")
                     continue
 
                 if not current_mouse_ids:
@@ -367,15 +367,15 @@ def crop_trim(temp_file_paths):
                         continue
 
                     effective_duration = duration - start_time
-                    num_chunks = math.ceil(effective_duration / chunk_duration)
-                    st.write(f"**{name} (Mouse {mouse_id})**: {num_chunks} chunks")
+                    num_bins = math.ceil(effective_duration / bin_duration)
+                    st.write(f"**{name} (Mouse {mouse_id})**: {num_bins} bins")
 
-                    for i in range(num_chunks):
-                        chunk_start = start_time + i * chunk_duration
-                        chunk_end = min(chunk_start + chunk_duration, duration)
+                    for i in range(num_bins):
+                        bin_start = start_time + i * bin_duration
+                        bin_end = min(bin_start + bin_duration, duration)
                         
-                        if chunk_duration == 3600: 
-                            hour_label = int(chunk_start // 3600) + 1
+                        if bin_duration == 3600: 
+                            hour_label = int(bin_start // 3600) + 1
                             output_file = os.path.join(final_output_dir, f"{global_prefix}_mouse{mouse_id}_H{hour_label}.mp4")
                         else:
                             bin_number = i + 1
@@ -383,7 +383,7 @@ def crop_trim(temp_file_paths):
 
                         try:
                             (
-                                ffmpeg.input(video_path, ss=chunk_start, t=chunk_end - chunk_start)
+                                ffmpeg.input(video_path, ss=bin_start, t=bin_end - bin_start)
                                 .filter('crop', crop['w'], crop['h'], crop['x'], crop['y'])
                                 .output(output_file, vcodec='libx264', acodec='aac')
                                 .overwrite_output().run(quiet=True)
