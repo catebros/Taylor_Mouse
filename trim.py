@@ -20,20 +20,28 @@ def trim(temp_file_paths):
 
     try:
         ZIP_THRESHOLD_MB = 500 
-        st.sidebar.header("Video Selection")
-
-        video_names = [os.path.basename(p) for p in temp_file_paths]
-        selected_idx = st.sidebar.selectbox("Select video to configure:", range(len(video_names)), format_func=lambda i: video_names[i])
-        selected_path = temp_file_paths[selected_idx]
-        selected_name = video_names[selected_idx]
-
-        # Add trimming mode option
-        st.sidebar.subheader("Trimming Mode")
+        
+        st.sidebar.title("Trimming Configuration")
+        
+        st.sidebar.header("1. Trimming Mode")
         trimming_mode = st.sidebar.radio(
             "How to apply trimming settings:",
             ["Same settings for all videos", "Individual settings per video"],
             index=1
         )
+
+        video_names = [os.path.basename(p) for p in temp_file_paths]
+        
+        if trimming_mode == "Individual settings per video":
+            st.sidebar.subheader("Video Selection")
+            selected_idx = st.sidebar.selectbox("Select video to configure:", range(len(video_names)), format_func=lambda i: video_names[i])
+            selected_name = video_names[selected_idx]
+        else:
+            selected_idx = 0
+            selected_name = video_names[0]
+            st.sidebar.info("Settings will be applied to all videos")
+        
+        selected_path = temp_file_paths[selected_idx]
 
         if "video_settings" not in st.session_state:
             st.session_state.video_settings = {}
@@ -57,27 +65,33 @@ def trim(temp_file_paths):
 
         cfg = st.session_state.video_settings[selected_name]
 
-        st.sidebar.markdown("### Start Time (H:M:S)")
+        st.sidebar.subheader("Start Time (H:M:S)")
         col1, col2, col3 = st.sidebar.columns(3)
         with col1:
-            cfg["start_h"] = st.number_input("H", 0, 23, cfg["start_h"], key=f"{selected_name}_sh", format="%d")
+            start_h = st.number_input("H", 0, 23, cfg["start_h"], key=f"{selected_name}_sh", format="%d")
         with col2:
-            cfg["start_m"] = st.number_input("M", 0, 59, cfg["start_m"], key=f"{selected_name}_sm", format="%d")
+            start_m = st.number_input("M", 0, 59, cfg["start_m"], key=f"{selected_name}_sm", format="%d")
         with col3:
-            cfg["start_s"] = st.number_input("S", 0, 59, cfg["start_s"], key=f"{selected_name}_ss", format="%d")
+            start_s = st.number_input("S", 0, 59, cfg["start_s"], key=f"{selected_name}_ss", format="%d")
 
-        st.sidebar.markdown("### Chunk Duration (H:M:S)")
+        st.sidebar.subheader("Chunk Duration (H:M:S)")
         col1, col2, col3 = st.sidebar.columns(3)
         with col1:
-            cfg["chunk_h"] = st.number_input("H", 0, 24, cfg["chunk_h"], key=f"{selected_name}_ch", format="%d")
+            chunk_h = st.number_input("H", 0, 24, cfg["chunk_h"], key=f"{selected_name}_ch", format="%d")
         with col2:
-            cfg["chunk_m"] = st.number_input("M", 0, 59, cfg["chunk_m"], key=f"{selected_name}_cm", format="%d")
+            chunk_m = st.number_input("M", 0, 59, cfg["chunk_m"], key=f"{selected_name}_cm", format="%d")
         with col3:
-            cfg["chunk_s"] = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"{selected_name}_cs", format="%d")
+            chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"{selected_name}_cs", format="%d")
 
-        if st.sidebar.button("Set Times for This Video", type="secondary"):
-            start_total = hms_to_seconds(cfg["start_h"], cfg["start_m"], cfg["start_s"])
-            chunk_total = hms_to_seconds(cfg["chunk_h"], cfg["chunk_m"], cfg["chunk_s"])
+        # Change button label based on mode
+        if trimming_mode == "Same settings for all videos":
+            button_label = "Apply Settings to All Videos"
+        else:
+            button_label = f"Set Times for {selected_name}"
+
+        if st.sidebar.button(button_label, type="secondary"):
+            start_total = hms_to_seconds(start_h, start_m, start_s)
+            chunk_total = hms_to_seconds(chunk_h, chunk_m, chunk_s)
             available_time = cfg["duration"] - start_total
             
             if chunk_total <= 0:
@@ -87,49 +101,49 @@ def trim(temp_file_paths):
             elif chunk_total > available_time:
                 st.sidebar.error(f"Chunk duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
             else:
-                st.sidebar.success(f"Times set for {selected_name}!")
+                # Apply to current video first
+                cfg["start_h"] = start_h
+                cfg["start_m"] = start_m
+                cfg["start_s"] = start_s
+                cfg["chunk_h"] = chunk_h
+                cfg["chunk_m"] = chunk_m
+                cfg["chunk_s"] = chunk_s
                 
-                # If same settings for all, apply to all videos
                 if trimming_mode == "Same settings for all videos":
+                    # Apply to all videos
                     for path in temp_file_paths:
                         name = os.path.basename(path)
                         if name in st.session_state.video_settings:
-                            st.session_state.video_settings[name]["start_h"] = cfg["start_h"]
-                            st.session_state.video_settings[name]["start_m"] = cfg["start_m"]
-                            st.session_state.video_settings[name]["start_s"] = cfg["start_s"]
-                            st.session_state.video_settings[name]["chunk_h"] = cfg["chunk_h"]
-                            st.session_state.video_settings[name]["chunk_m"] = cfg["chunk_m"]
-                            st.session_state.video_settings[name]["chunk_s"] = cfg["chunk_s"]
-                    st.sidebar.info("Settings applied to all videos!")
+                            st.session_state.video_settings[name]["start_h"] = start_h
+                            st.session_state.video_settings[name]["start_m"] = start_m
+                            st.session_state.video_settings[name]["start_s"] = start_s
+                            st.session_state.video_settings[name]["chunk_h"] = chunk_h
+                            st.session_state.video_settings[name]["chunk_m"] = chunk_m
+                            st.session_state.video_settings[name]["chunk_s"] = chunk_s
+                    st.sidebar.success("Settings applied to all videos!")
+                else:
+                    st.sidebar.success(f"Times set for {selected_name}!")
 
-        st.sidebar.header("Output Folder")
+        st.sidebar.markdown("---")
+        
+        st.sidebar.header("2. Output Configuration")
+
+        st.header("Video Trim Settings")
+        table_data = []
+        for path in temp_file_paths:
+            name = os.path.basename(path)
+            conf = st.session_state.video_settings.get(name, {})
+            start = hms_to_seconds(conf.get("start_h", 0), conf.get("start_m", 0), conf.get("start_s", 0))
+            chunk = hms_to_seconds(conf.get("chunk_h", 1), conf.get("chunk_m", 0), conf.get("chunk_s", 0))
+            table_data.append({
+                "Video Name": name,
+                "Start Time": seconds_to_hms(start),
+                "Chunk Duration": seconds_to_hms(chunk)
+            })
+        st.table(table_data)
+        
+        st.sidebar.subheader("Output Folder")
         output_base_path = st.sidebar.text_input("Full output folder path", os.path.join(os.path.expanduser("~"), "Videos", "Trimmed"))
-        
-        st.sidebar.subheader("Output Naming")
-        
-        if "prefix_settings" not in st.session_state:
-            st.session_state.prefix_settings = {}
-        
-        for path in temp_file_paths:
-            video_name = os.path.basename(path)
-            if video_name not in st.session_state.prefix_settings:
-                default_prefix = video_name.split('_')[0] if '_' in video_name else os.path.splitext(video_name)[0]
-                st.session_state.prefix_settings[video_name] = default_prefix
-        
-        st.sidebar.markdown("**Customize output prefixes:**")
-        
-        for path in temp_file_paths:
-            video_name = os.path.basename(path)
-            current_prefix = st.session_state.prefix_settings[video_name]
-            
-            new_prefix = st.sidebar.text_input(
-                f"Prefix for {video_name}:",
-                value=current_prefix,
-                key=f"prefix_{video_name}"
-            )
-            st.session_state.prefix_settings[video_name] = new_prefix
-
-            st.sidebar.caption(f"→ {new_prefix}_bin_X.mp4 or {new_prefix}_HX.mp4")
         
         folder_exists = os.path.exists(output_base_path)
         if folder_exists:
@@ -157,21 +171,36 @@ def trim(temp_file_paths):
         else:
             final_output_path = output_base_path
 
-        st.header("Video Trim Settings")
-        table_data = []
+        st.sidebar.subheader("File Naming")
+        
+        if "prefix_settings" not in st.session_state:
+            st.session_state.prefix_settings = {}
+        
         for path in temp_file_paths:
-            name = os.path.basename(path)
-            conf = st.session_state.video_settings.get(name, {})
-            start = hms_to_seconds(conf.get("start_h", 0), conf.get("start_m", 0), conf.get("start_s", 0))
-            chunk = hms_to_seconds(conf.get("chunk_h", 1), conf.get("chunk_m", 0), conf.get("chunk_s", 0))
-            table_data.append({
-                "Video Name": name,
-                "Start Time": seconds_to_hms(start),
-                "Chunk Duration": seconds_to_hms(chunk)
-            })
-        st.table(table_data)
+            video_name = os.path.basename(path)
+            if video_name not in st.session_state.prefix_settings:
+                default_prefix = video_name.split('_')[0] if '_' in video_name else os.path.splitext(video_name)[0]
+                st.session_state.prefix_settings[video_name] = default_prefix
+        
+        st.sidebar.markdown("**Customize output prefixes:**")
+        
+        for path in temp_file_paths:
+            video_name = os.path.basename(path)
+            current_prefix = st.session_state.prefix_settings[video_name]
+            
+            new_prefix = st.sidebar.text_input(
+                f"Prefix for {video_name}:",
+                value=current_prefix,
+                key=f"prefix_{video_name}"
+            )
+            st.session_state.prefix_settings[video_name] = new_prefix
+            st.sidebar.caption(f"→ {new_prefix}_bin_X.mp4 or {new_prefix}_HX.mp4")
 
-        if st.sidebar.button("Start Trimming All Videos", type="primary"):
+        st.sidebar.markdown("---")
+        
+        st.sidebar.header("3. Process Videos")
+        
+        if st.sidebar.button("Start Trimming All Videos", type="primary", use_container_width=True):
             os.makedirs(final_output_path, exist_ok=True)
             
             st.subheader("Trimming Process")
@@ -250,4 +279,5 @@ def trim(temp_file_paths):
 
         
     except Exception as e:
+        st.error(f"Unexpected error: {str(e)}")
         st.error(f"Unexpected error: {str(e)}")
