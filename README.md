@@ -7,7 +7,7 @@ Python = 3.8.10
 ## Installation
 1. Clone the repository:
    ```bash
-   git clone change this !!!!
+   git clone https://github.com/catebros/Taylor_Mouse.git
    ```
 2. Navigate to the project directory:
    ```bash
