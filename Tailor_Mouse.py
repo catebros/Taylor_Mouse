@@ -6,7 +6,7 @@ from crop import crop
 from crop_trim import crop_trim
 import ffmpeg
 
-st.set_page_config(page_title="Video Processing", layout="wide")
+st.set_page_config(page_title="Video Processing", layout="wide", page_icon="data/image.jpg")
 
 st.title('Video Processing')
 
