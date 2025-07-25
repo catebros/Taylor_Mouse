@@ -44,8 +44,24 @@ def crop_trim(temp_file_paths):
         st.sidebar.header("2. Mouse Setup")
         
         st.sidebar.subheader("Mouse IDs Setup")
-        mouse_ids_input = st.sidebar.text_input("Enter mouse IDs (comma-separated)", "1,2,3")
-        mouse_ids = [m.strip() for m in mouse_ids_input.split(",") if m.strip().isdigit()]
+        
+        saved_mouse_ids = []
+        if selected_video_name in st.session_state.crop_settings:
+            saved_mouse_ids = [int(mid) for mid in st.session_state.crop_settings[selected_video_name].keys() if mid.isdigit()]
+        
+        input_key = f"mouse_ids_{selected_video_name}"
+        
+        if input_key in st.session_state and st.session_state[input_key]:
+            default_mouse_ids_str = st.session_state[input_key]
+        else:
+            default_mouse_ids_str = ",".join(map(str, saved_mouse_ids)) if saved_mouse_ids else ""
+        
+        mouse_ids_input = st.sidebar.text_input(
+            "Enter mouse IDs (comma-separated) - Example: 1,2,3", 
+            value=default_mouse_ids_str,
+            key=input_key
+        )
+        mouse_ids = [int(m.strip()) for m in mouse_ids_input.split(",") if m.strip().isdigit()]
 
         if not mouse_ids:
             st.sidebar.warning("Please enter at least one mouse ID.")
@@ -69,26 +85,23 @@ def crop_trim(temp_file_paths):
 
                 crops_dict = st.session_state.crop_settings.get(file_name, {})
 
-                # For the currently selected video, use current mouse_ids
                 if file_name == selected_video_name:
                     total_crops = len(mouse_ids)
                     set_mice = []
-                    for m in mouse_ids:
+                    for m in sorted(mouse_ids):
                         if crops_dict.get(str(m)) is not None:
                             set_mice.append(f"Mouse {m}")
                     crops_set = len(set_mice)
                 else:
-                    # For other videos, show previously set crops
                     crops_set = sum(1 for c in crops_dict.values() if c is not None)
                     total_crops = len(crops_dict) if crops_dict else 0
-                    set_mice = [f"Mouse {m}" for m in crops_dict.keys() if crops_dict[m] is not None]
+                    set_mice = [f"Mouse {m}" for m in sorted([int(mid) for mid in crops_dict.keys() if mid.isdigit()]) if crops_dict[str(m)] is not None]
                 
                 if set_mice:
                     crops_detail = f"{crops_set}/{total_crops} ({', '.join(set_mice)})"
                 else:
                     crops_detail = f"{crops_set}/{total_crops}"
 
-                # Add trimming info
                 trim_config = st.session_state.video_settings.get(file_name, {})
                 start_time = hms_to_seconds(trim_config.get("start_h", 0), trim_config.get("start_m", 0), trim_config.get("start_s", 0))
                 chunk_time = hms_to_seconds(trim_config.get("chunk_h", 1), trim_config.get("chunk_m", 0), trim_config.get("chunk_s", 0))
@@ -106,11 +119,14 @@ def crop_trim(temp_file_paths):
 
         render_file_info_table()
 
-        # Initialize crop settings properly for the selected video
         if selected_video_name not in st.session_state.crop_settings:
             st.session_state.crop_settings[selected_video_name] = {}
 
-        # Initialize mouse IDs for the selected video
+        current_crop_keys = list(st.session_state.crop_settings[selected_video_name].keys())
+        for existing_mouse_id in current_crop_keys:
+            if existing_mouse_id not in [str(m) for m in mouse_ids]:
+                del st.session_state.crop_settings[selected_video_name][existing_mouse_id]
+
         for mid in mouse_ids:
             if str(mid) not in st.session_state.crop_settings[selected_video_name]:
                 st.session_state.crop_settings[selected_video_name][str(mid)] = None
@@ -175,11 +191,9 @@ def crop_trim(temp_file_paths):
                             'h': int(round(crop_box['height']))
                         }
                         
-                        # Ensure the video exists in crop_settings
                         if selected_video_name not in st.session_state.crop_settings:
                             st.session_state.crop_settings[selected_video_name] = {}
                         
-                        # Use string keys for consistency
                         st.session_state.crop_settings[selected_video_name][str(selected_mouse_id)] = crop_data
                         st.success(f"Crop set for Mouse {selected_mouse_id} in {selected_video_name}")
                         st.rerun()
@@ -187,11 +201,6 @@ def crop_trim(temp_file_paths):
                         st.error("Please draw a valid crop box before setting the crop.")
                 except Exception as e:
                     st.error(f"Error setting crop: {str(e)}")
-                    # Debug information
-                    st.write("Debug info:")
-                    st.write(f"Selected video: {selected_video_name}")
-                    st.write(f"Selected mouse: {selected_mouse_id}")
-                    st.write(f"Crop box: {crop_box}")
 
         st.sidebar.markdown("---")
         
@@ -204,7 +213,6 @@ def crop_trim(temp_file_paths):
             index=0
         )
         
-        # Video selector for trimming (only if individual mode)
         if trimming_mode == "Individual settings per video":
             st.sidebar.subheader("Video Selection for Trimming")
             trimming_video_idx = st.sidebar.selectbox("Choose video to configure trimming:", 
@@ -212,7 +220,6 @@ def crop_trim(temp_file_paths):
                                                       format_func=lambda i: os.path.basename(temp_file_paths[i]))
             trimming_video_name = os.path.basename(temp_file_paths[trimming_video_idx])
         else:
-            # For same settings mode, use first video as reference
             trimming_video_idx = 0
             trimming_video_name = os.path.basename(temp_file_paths[0])
             st.sidebar.info("Trimming settings will be applied to all videos")
@@ -224,7 +231,7 @@ def crop_trim(temp_file_paths):
                 st.session_state.video_settings[name] = {
                     "duration": duration,
                     "start_h": 0, "start_m": 0, "start_s": 0,
-                    "chunk_h": 1, "chunk_m": 0, "chunk_s": 0
+                    "chunk_h": 0, "chunk_m": 0, "chunk_s": 0
                 }
 
         cfg = st.session_state.video_settings[trimming_video_name]
@@ -247,7 +254,6 @@ def crop_trim(temp_file_paths):
         with col3:
             chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"ct_chunk_s_{trimming_video_idx}_{trimming_video_name}", format="%d")
 
-        # Auto-update session state when values change
         cfg["start_h"] = start_h
         cfg["start_m"] = start_m
         cfg["start_s"] = start_s
@@ -255,7 +261,6 @@ def crop_trim(temp_file_paths):
         cfg["chunk_m"] = chunk_m
         cfg["chunk_s"] = chunk_s
 
-        # Change button label based on mode
         if trimming_mode == "Same settings for all videos":
             button_label = "Apply Trimming Settings to All Videos"
         else:
@@ -274,7 +279,6 @@ def crop_trim(temp_file_paths):
                 st.sidebar.error(f"Bin duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
             else:
                 if trimming_mode == "Same settings for all videos":
-                    # Apply to all videos
                     for path in temp_file_paths:
                         name = os.path.basename(path)
                         if name in st.session_state.video_settings:
@@ -287,6 +291,8 @@ def crop_trim(temp_file_paths):
                     st.sidebar.success("Trimming settings applied to all videos!")
                 else:
                     st.sidebar.success(f"Trimming times set for {trimming_video_name}!")
+                
+                st.rerun()
 
         st.sidebar.markdown("---")
         
@@ -325,7 +331,7 @@ def crop_trim(temp_file_paths):
         st.sidebar.subheader("File Naming")
         
         global_prefix = st.sidebar.text_input("Output file prefix (for all videos):", "processed")
-        st.sidebar.caption(f"→ {global_prefix}_mouseX_bin_Y.mp4 or {global_prefix}_mouseX_HY.mp4")
+        st.sidebar.caption(f"{global_prefix}_mouseX_bin_Y.mp4 or {global_prefix}_mouseX_HY.mp4")
 
         st.sidebar.markdown("---")
         
@@ -343,11 +349,8 @@ def crop_trim(temp_file_paths):
                 crops = st.session_state.crop_settings.get(name, {})
                 config = st.session_state.video_settings.get(name, {})
                 
-                if name == selected_video_name:
-                    current_mouse_ids = mouse_ids
-                else:
-                    crops_dict = st.session_state.crop_settings.get(name, {})
-                    current_mouse_ids = [mid for mid in mouse_ids if crops_dict.get(mid) is not None]
+                crops_dict = st.session_state.crop_settings.get(name, {})
+                current_mouse_ids = [int(mid) for mid in crops_dict.keys() if mid.isdigit() and crops_dict[mid] is not None]
 
                 start_time = hms_to_seconds(config["start_h"], config["start_m"], config["start_s"])
                 bin_duration = hms_to_seconds(config["chunk_h"], config["chunk_m"], config["chunk_s"])
@@ -356,19 +359,24 @@ def crop_trim(temp_file_paths):
                     continue
 
                 if not current_mouse_ids:
-                    st.warning(f"Skipping {name}: No mouse crops defined for current mouse IDs.")
+                    st.warning(f"Skipping {name}: No mouse crops defined.")
                     continue
 
+                st.write(f"**Processing {name}** with mice: {current_mouse_ids}")
+
+                effective_duration = duration - start_time
+                num_bins = math.ceil(effective_duration / bin_duration)
+                total_operations_for_video = len(current_mouse_ids) * num_bins
+                
+                video_progress = st.progress(0)
+                video_status = st.empty()
+                operations_completed = 0
+
                 for mouse_id in current_mouse_ids:
-                    # Use string keys for consistency
                     crop = crops.get(str(mouse_id))
                     if not crop:
                         st.warning(f"Skipping Mouse {mouse_id} in {name}: No crop data.")
                         continue
-
-                    effective_duration = duration - start_time
-                    num_bins = math.ceil(effective_duration / bin_duration)
-                    st.write(f"**{name} (Mouse {mouse_id})**: {num_bins} bins")
 
                     for i in range(num_bins):
                         bin_start = start_time + i * bin_duration
@@ -381,6 +389,8 @@ def crop_trim(temp_file_paths):
                             bin_number = i + 1
                             output_file = os.path.join(final_output_dir, f"{global_prefix}_mouse{mouse_id}_bin_{bin_number}.mp4")
 
+                        video_status.info(f"Processing Mouse {mouse_id}, bin {i+1}/{num_bins}")
+
                         try:
                             (
                                 ffmpeg.input(video_path, ss=bin_start, t=bin_end - bin_start)
@@ -389,10 +399,18 @@ def crop_trim(temp_file_paths):
                                 .overwrite_output().run(quiet=True)
                             )
                             all_output_files.append(output_file)
+                            operations_completed += 1
+                            
+                            video_progress.progress(operations_completed / total_operations_for_video)
                         except Exception as e:
                             st.error(f"Error: {e}")
+                            operations_completed += 1
+                            video_progress.progress(operations_completed / total_operations_for_video)
 
-                    st.write("---")
+                video_status.success(f"Completed {name} - {operations_completed} files processed")
+                st.write("---")
+            
+            st.success(f"All {len(all_output_files)} files processed successfully!")
 
             total_size_mb = sum(os.path.getsize(f) for f in all_output_files) / (1024 * 1024)
             if total_size_mb >= ZIP_THRESHOLD_MB:
@@ -405,6 +423,6 @@ def crop_trim(temp_file_paths):
             else:
                 st.success(f"Videos saved to: {final_output_dir}")
 
-
     except Exception as e:
         st.error(f"Unexpected error: {str(e)}")
+

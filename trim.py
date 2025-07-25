@@ -83,7 +83,6 @@ def trim(temp_file_paths):
         with col3:
             chunk_s = st.number_input("S", 0, 59, cfg["chunk_s"], key=f"trim_chunk_s_{selected_idx}_{selected_name}", format="%d")
 
-        # Change button label based on mode
         if trimming_mode == "Same settings for all videos":
             button_label = "Apply Settings to All Videos"
         else:
@@ -101,7 +100,6 @@ def trim(temp_file_paths):
             elif chunk_total > available_time:
                 st.sidebar.error(f"Bin duration ({seconds_to_hms(chunk_total)}) exceeds available time ({seconds_to_hms(available_time)})!")
             else:
-                # Apply to current video first
                 cfg["start_h"] = start_h
                 cfg["start_m"] = start_m
                 cfg["start_s"] = start_s
@@ -110,7 +108,6 @@ def trim(temp_file_paths):
                 cfg["chunk_s"] = chunk_s
                 
                 if trimming_mode == "Same settings for all videos":
-                    # Apply to all videos
                     for path in temp_file_paths:
                         name = os.path.basename(path)
                         if name in st.session_state.video_settings:
@@ -124,7 +121,6 @@ def trim(temp_file_paths):
                 else:
                     st.sidebar.success(f"Times set for {selected_name}!")
                 
-                # Force table update by triggering rerun
                 st.rerun()
 
         st.sidebar.markdown("---")
@@ -187,13 +183,8 @@ def trim(temp_file_paths):
         
         st.sidebar.markdown("**Customize output prefixes:**")
         
-        # Check for duplicate prefixes
         all_prefixes = []
         duplicate_found = False
-        
-        # Initialize prefix tracking
-        if "temp_prefix_changes" not in st.session_state:
-            st.session_state.temp_prefix_changes = {}
         
         for path in temp_file_paths:
             video_name = os.path.basename(path)
@@ -202,47 +193,32 @@ def trim(temp_file_paths):
             new_prefix = st.sidebar.text_input(
                 f"Prefix for {video_name}:",
                 value=current_prefix,
-                key=f"prefix_{video_name}",
-                on_change=lambda v=video_name: st.session_state.temp_prefix_changes.update({v: st.session_state[f"prefix_{v}"]})
+                key=f"prefix_{video_name}"
             )
             
-            # Update the actual prefix settings only after user confirms the change
-            if video_name in st.session_state.temp_prefix_changes:
-                st.session_state.prefix_settings[video_name] = st.session_state.temp_prefix_changes[video_name]
+            if new_prefix != current_prefix:
+                st.session_state.prefix_settings[video_name] = new_prefix
             
-            st.sidebar.caption(f"→ {st.session_state.prefix_settings[video_name]}_bin_X.mp4 or {st.session_state.prefix_settings[video_name]}_HX.mp4")
+            st.sidebar.caption(f"{new_prefix}_bin_X.mp4 or {new_prefix}_HX.mp4")
             
-            all_prefixes.append(st.session_state.prefix_settings[video_name])
+            all_prefixes.append(new_prefix)
         
-        # Check for duplicates
         if len(all_prefixes) != len(set(all_prefixes)):
             duplicate_found = True
-            st.sidebar.error("⚠️ Duplicate prefixes detected! Files will overwrite each other.")
+            st.sidebar.error("Duplicate prefixes detected! Files will overwrite each other.")
             
-            # Show which prefixes are duplicated
             from collections import Counter
             prefix_counts = Counter(all_prefixes)
             duplicates = [prefix for prefix, count in prefix_counts.items() if count > 1]
             st.sidebar.error(f"Duplicated prefixes: {', '.join(duplicates)}")
             
-            # Offer solutions
             st.sidebar.subheader("Solutions:")
             naming_strategy = st.sidebar.radio(
                 "Choose how to handle duplicate names:",
                 [
                     "Fix prefixes manually (recommended)",
                     "Use continuous bin numbering across all videos"
-                ],
-                help="""
-                **Fix prefixes manually:** Each video gets unique prefix names, bins restart at 1 for each video.
-                Example: video1_bin_1.mp4, video1_bin_2.mp4, video2_bin_1.mp4, video2_bin_2.mp4
-                
-                **Continuous bin numbering:** Bins continue sequentially across ALL videos regardless of prefix.
-                Example: If video1 has 3 bins and video2 has 2 bins:
-                - video1_bin_1.mp4, video1_bin_2.mp4, video1_bin_3.mp4
-                - video2_bin_4.mp4, video2_bin_5.mp4
-                This ensures no filename conflicts even with duplicate prefixes.
-                """
+                ]
             )
         else:
             naming_strategy = "Fix prefixes manually (recommended)"
@@ -251,7 +227,6 @@ def trim(temp_file_paths):
         
         st.sidebar.header("3. Process Videos")
         
-        # Disable processing if duplicates found and manual fix chosen
         if duplicate_found and naming_strategy == "Fix prefixes manually (recommended)":
             st.sidebar.error("Please fix duplicate prefixes before processing")
             process_button_disabled = True
@@ -264,9 +239,7 @@ def trim(temp_file_paths):
             st.subheader("Trimming Process")
             all_output_files = []
             
-            # Choose naming strategy
             if naming_strategy == "Use continuous bin numbering across all videos":
-                # Continuous bin numbering across all videos
                 global_bin_counter = 1
                 
                 for path in temp_file_paths:
@@ -328,7 +301,6 @@ def trim(temp_file_paths):
                     bin_status.success(f"Completed: {name}")
                     st.write("---")
             else:
-                # Original approach with filename conflict detection
                 used_filenames = set()
 
                 for path in temp_file_paths:
@@ -372,7 +344,6 @@ def trim(temp_file_paths):
                             bin_number = i + 1  
                             base_output_name = f"{video_prefix}_bin_{bin_number}.mp4"
                         
-                        # Check for filename conflicts and add counter if needed
                         output_name = base_output_name
                         counter = 1
                         while output_name in used_filenames:
