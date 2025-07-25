@@ -1,4 +1,4 @@
-# Taylor_Mouse
+# Tailor_Mouse
 
 A Python tool for efficient image cropping and processing.
 
@@ -7,11 +7,11 @@ Python = 3.8.10
 ## Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/catebros/Taylor_Mouse.git
+   git clone https://github.com/catebros/Tailor_Mouse.git
    ```
 2. Navigate to the project directory:
    ```bash
-   cd Taylor_Mouse
+   cd Tailor_Mouse
    ```
 3. Create a virtual environment:
    ```bash
@@ -35,7 +35,7 @@ Python = 3.8.10
 
 ### Basic Usage
 ```bash
-streamlit run Taylor_Mouse.py
+streamlit run Tailor_Mouse.py
 ```
 
 ## Troubleshooting
