@@ -21,24 +21,20 @@ def get_video_files_tree(root_path):
             
         for item in root.rglob('*'):
             if item.is_file() and item.suffix.lower() in video_extensions:
-                # Get relative path from root
-                rel_path = item.relative_to(root)
-                parts = rel_path.parts
-                
-                # Build nested dictionary structure
+                parts = item.relative_to(root).parts
+
                 current = tree
-                for part in parts[:-1]:  # All parts except filename
+                for part in parts[:-1]: 
                     if part not in current:
                         current[part] = {}
                     current = current[part]
                 
-                # Add file info
                 if '_files' not in current:
                     current['_files'] = []
                 current['_files'].append({
                     'name': parts[-1],
                     'path': str(item),
-                    'size': item.stat().st_size / (1024**2)  # Size in MB
+                    'size': item.stat().st_size / (1024**2)  
                 })
     except Exception as e:
         st.error(f"Error scanning directory: {e}")
@@ -52,8 +48,7 @@ def render_directory_tree(tree, path_prefix="", level=0):
     
     for key, value in tree.items():
         if key == '_files':
-            # Render files in current directory
-            if value:  # If there are files
+            if value: 
                 st.write("📁 **Files in this directory:**")
                 for file_info in value:
                     col1, col2, col3 = st.columns([3, 1, 1])
@@ -71,15 +66,12 @@ def render_directory_tree(tree, path_prefix="", level=0):
                     if is_selected:
                         selected_files.append(file_info['path'])
         else:
-            # Render subdirectory - use containers instead of nested expanders
             indent = "　" * level
             
-            # Use session state to track expanded folders
             folder_key = f"folder_{path_prefix}_{key}"
             if folder_key not in st.session_state:
-                st.session_state[folder_key] = level < 2  # Auto-expand first 2 levels
+                st.session_state[folder_key] = level < 2  
             
-            # Create folder header with toggle button
             col1, col2 = st.columns([6, 1])
             with col1:
                 st.write(f"{indent}📂 **{key}**")
@@ -90,11 +82,8 @@ def render_directory_tree(tree, path_prefix="", level=0):
                     st.session_state[folder_key] = not st.session_state[folder_key]
                     st.rerun()
             
-            # Show contents if expanded
             if st.session_state[folder_key]:
-                # Use container with border for visual separation
                 with st.container():
-                    # Add some visual indentation
                     st.markdown(f'<div style="margin-left: {(level + 1) * 20}px; border-left: 2px solid #f0f0f0; padding-left: 10px;">', 
                               unsafe_allow_html=True)
                     sub_selected = render_directory_tree(value, f"{path_prefix}/{key}", level + 1)
@@ -111,7 +100,6 @@ def format_file_size(size_bytes):
         size_bytes /= 1024.0
     return f"{size_bytes:.1f} PB"
 
-# Initialize session state variables first
 if 'processing' not in st.session_state:
     st.session_state.processing = False
 if 'selected_files_for_processing' not in st.session_state:
@@ -119,22 +107,17 @@ if 'selected_files_for_processing' not in st.session_state:
 if 'processing_type' not in st.session_state:
     st.session_state.processing_type = ""
 
-# Handle processing mode - use full width
 if st.session_state.processing:
-    # Processing mode - full width
     st.header('Processing Videos')
     
     selected_files = st.session_state.selected_files_for_processing
     processing_type = st.session_state.processing_type
     
-    # Show processing info in a more prominent way
     st.info(f"Processing {len(selected_files)} files with **{processing_type}** operation")
     
-    # Show processing files in a nice container
     with st.container():
         st.subheader("Files being processed:")
         
-        # Create columns for better layout
         for i, file_path in enumerate(selected_files):
             col_file1, col_file2 = st.columns([3, 1])
             with col_file1:
@@ -142,11 +125,9 @@ if st.session_state.processing:
             with col_file2:
                 st.write(f"{os.path.dirname(file_path)}")
     
-    # Add some spacing
     st.markdown("---")
     
     try:
-        # Create a progress container
         progress_container = st.empty()
         
         with st.spinner(f"Processing {len(selected_files)} files..."):
@@ -170,7 +151,6 @@ if st.session_state.processing:
     except Exception as e:
         st.error(f"Processing error: {str(e)}")
         
-        # Reset processing state on error
         col_back1, col_back2, col_back3 = st.columns([1, 2, 1])
         with col_back2:
             if st.button("Back to File Browser", type="primary", use_container_width=True):
@@ -180,7 +160,6 @@ if st.session_state.processing:
                 st.rerun()
 
 else:
-    # Normal mode - use columns
     col1, col2 = st.columns([1, 2])
 
     with col1:
@@ -189,24 +168,20 @@ else:
         
         st.header('Directory Settings')
         
-        # Default path input
         default_path = st.text_input(
             "Root directory path:", 
-            value="/home/user/videos",  # Change this default as needed
+            value="/home/user/videos",
             help="Enter the root path to scan for video files"
         )
         
-        # Scan button
         scan_button = st.button("Scan Directory", type="primary")
 
     with col2:
         st.header('Video File Browser')
         
-        # Initialize more session state variables
         if 'current_path' not in st.session_state:
             st.session_state.current_path = default_path
         
-        # Update path if scan button was clicked
         if scan_button:
             st.session_state.current_path = default_path
         
@@ -214,12 +189,10 @@ else:
         
         if current_path:
             
-            # Get directory tree
             with st.spinner("Scanning directory..."):
                 video_tree = get_video_files_tree(current_path)
             
             if video_tree:
-                # Show summary
                 total_files = sum(len(d.get('_files', [])) for d in [video_tree] + 
                                 [v for v in video_tree.values() if isinstance(v, dict)])
                 
@@ -234,23 +207,18 @@ else:
                 
                 total_files = count_files_recursive(video_tree)
                 
-                # Render the tree and get selected files
                 st.subheader("Select Videos to Process")
                 
-                # Add select all/none buttons
                 col_a, col_b, col_c = st.columns([1, 1, 2])
                 with col_a:
                     if st.button("Select All"):
-                        # This would require more complex state management
                         st.info("Use individual checkboxes to select files")
                 with col_b:
                     if st.button("Clear All"):
                         st.rerun()
                 
-                # Render the directory tree
                 selected_files = render_directory_tree(video_tree)
                 
-                # Show selected files summary
                 if selected_files:
                     st.success(f"Selected {len(selected_files)} files for processing")
                     
@@ -258,11 +226,8 @@ else:
                         for i, file_path in enumerate(selected_files, 1):
                             st.write(f"{i}. `{file_path}`")
                     
-                    # Process button
                     if st.button("Process Selected Files", type="primary"):
-                        # Store current path before processing
                         st.session_state.last_path = current_path
-                        # Hide the file tree and sidebar
                         st.session_state.processing = True
                         st.session_state.selected_files_for_processing = selected_files.copy()
                         st.session_state.processing_type = crop_trim_selected
